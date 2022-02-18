@@ -196,7 +196,7 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
     bitmap.flags |= .FREE_DATA_ON_DEINIT;  // But, we are not setting the allocator. Is that bad?
 }
 
-bitmap_resize :: (bitmap: Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
+bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
     channels: s32;
     if bitmap.format == {
         case .R8;    channels = 1;

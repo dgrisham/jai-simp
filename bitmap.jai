@@ -69,8 +69,7 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
     data := stbi_load_from_memory(memory.data, count32, *w, *h, *channels, 0);
 
     if !data {
-        err := to_string(stbi_failure_reason());
-        log(tprint("Unable to load a bitmap from memory: %", err), flags=.ERROR);
+        log("Failed to load a bitmap from memory", flags=.ERROR);
         return false;
     }
 

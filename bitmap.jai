@@ -205,19 +205,13 @@ bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
     }
     assert(channels != 0, "Unsuported texture format in bitmap_resize.");
 
-    alpha: s32 = -1;
-    if channels == 4 alpha = 3;
-
-    input_w      := bitmap.width;
-    input_h      := bitmap.height;
-    input_stride := (input_w * channels + 3) & -4;
-
     output_stride := (w * channels + 3) & -4;
     data := alloc(output_stride * h);
     defer stbi_image_free(data);
 
-    if bitmap.flags & .IS_SRGB stbir_resize_uint8_srgb(bitmap.data.data, input_w, input_h, input_stride, data, w, h, output_stride, channels, alpha, flags=0);
-    else                       stbir_resize_uint8     (bitmap.data.data, input_w, input_h, input_stride, data, w, h, output_stride, channels);
+    alpha: s32 = cast(s32) ifx channels == 4 then 3 else -1;
+    if bitmap.flags & .IS_SRGB stbir_resize_uint8_srgb(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels, alpha, flags=0);
+    else                       stbir_resize_uint8     (bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels);
 
     bitmap_alloc(resized_bitmap, w, h, bitmap.format);
     memcpy(resized_bitmap.data.data, data, resized_bitmap.stride*resized_bitmap.height);

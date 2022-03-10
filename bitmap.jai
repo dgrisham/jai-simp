@@ -78,13 +78,19 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
 }
 
 bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool {
-    if bitmap.format != .RGB8 && bitmap.format != .RGBA8 {
-        log("Attempt to save a bitmap, but the format % is unhandled.", bitmap.format, flags=.ERROR);
-        return false;
-    }
+    // if bitmap.format != .RGB8 && bitmap.format != .RGBA8 {
+    //     log("Attempt to save a bitmap, but the format % is unhandled.", bitmap.format, flags=.ERROR);
+    //     return false;
+    // }
 
-    components : s32 = 4;
-    if bitmap.format == .RGB8 components = 3;
+    components: s32;
+    if bitmap.format == {
+        case .R8;    components = 1;
+        case .RG8;   components = 2;
+        case .RGB8;  components = 3;
+        case .RGBA8; components = 4;
+    }
+    assert(components != 0, "Unsuported texture format in bitmap_save.");
     
     stride := bitmap.stride;
     data   := bitmap.data.data;
@@ -104,7 +110,7 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
         case "jpg";
             return stbi_write_jpg(name, bitmap.width, bitmap.height, components, data, stride, quality=80) != 0;
         case;
-            log("Bitmap extension '%' is not understood by this code.", extension, flags=.ERROR);
+            log("Bitmap extension '%' is not understood by this code.: %", extension, filepath, flags=.ERROR);
             return false;
     }
     
@@ -205,9 +211,10 @@ bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
     }
     assert(channels != 0, "Unsuported texture format in bitmap_resize.");
 
-    output_stride := (w * channels + 3) & -4;
+    bpp := get_image_bytes_per_texel(bitmap.format);
+    output_stride := cast(s32) (w * bpp);
     data := alloc(output_stride * h);
-    defer stbi_image_free(data);
+    defer free(data);
 
     alpha: s32 = cast(s32) ifx channels == 4 then 3 else -1;
     if bitmap.flags & .IS_SRGB stbir_resize_uint8_srgb(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels, alpha, flags=0);

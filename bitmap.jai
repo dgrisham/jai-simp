@@ -201,7 +201,7 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
     bitmap.flags |= .FREE_DATA_ON_DEINIT;  // But, we are not setting the allocator. Is that bad?
 }
 
-bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
+bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) -> bool {
     channels: s32;
     if bitmap.format == {
         case .R8;    channels = 1;
@@ -211,17 +211,26 @@ bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) {
     }
     assert(channels != 0, "Unsuported texture format in bitmap_resize.");
 
+    bitmap_alloc(resized_bitmap, w, h, bitmap.format);
+
     bpp := get_image_bytes_per_texel(bitmap.format);
     output_stride := cast(s32) (w * bpp);
-    data := alloc(output_stride * h);
+
+    size := output_stride * h;
+    data := alloc(size);
     defer free(data);
 
     alpha: s32 = cast(s32) ifx channels == 4 then 3 else -1;
-    if bitmap.flags & .IS_SRGB stbir_resize_uint8_srgb(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels, alpha, flags=0);
-    else                       stbir_resize_uint8     (bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels);
+    result: s32;
+    if bitmap.flags & .IS_SRGB {
+        result = stbir_resize_uint8_srgb(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels, alpha, flags=0);
+    } else {
+        result = stbir_resize_uint8(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels);
+    }
+    if result != 1 return false;
 
-    bitmap_alloc(resized_bitmap, w, h, bitmap.format);
-    memcpy(resized_bitmap.data.data, data, resized_bitmap.stride*resized_bitmap.height);
+    memcpy(resized_bitmap.data.data, data, size);
+    return true;
 }
 
 #scope_file

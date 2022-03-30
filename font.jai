@@ -642,6 +642,7 @@ get_font_at_size :: (path: string, name: string, pixel_height: int) -> *Dynamic_
 }
 
 get_font_at_size :: (memory: [] u8, pixel_height: int) -> *Dynamic_Font {
+    inline ensure_fonts_are_initted();
     result := New(Dynamic_Font);
 
     loaded: *Loaded_Font;

@@ -94,7 +94,7 @@ Glyph_Data :: struct {
     glyph_index_within_font: u32;
     
     x0, y0: s16;
-    width, height: s32;  // Freetype's structs are signed, so are we. Sigh.
+    width, height: u32;
 
     offset_x, offset_y: s16;
 
@@ -129,6 +129,7 @@ Dynamic_Font :: struct {
     typical_ascender:       int;
     typical_descender:      int;
     em_width:               int;
+    // Added by dgrisham
     w_width:                int;
     
     y_offset_for_my_latin_characters: float;
@@ -280,7 +281,7 @@ make_loaded_font :: (name: string, data: [] u8) -> *Loaded_Font {
 
     error := FT_New_Memory_Face(ft_library, data.data, cast(s32) data.count,
                                 0, *face);
-    assert(error != FT_Err_Unknown_File_Format);
+    assert(error != xx FT_Err.Unknown_File_Format);
     assert(!error);
 
     if error return null;
@@ -361,6 +362,9 @@ convert_to_temporary_glyphs :: (using font: *Dynamic_Font, s: string, effect_fla
 
     t := s.data;
     while t < s.data + s.count {
+        t_str: string;
+        t_str.data = t;
+        t_str.count = 1;
         utf32 := one_utf32_char(t);
 
         latin := is_latin(utf32);
@@ -445,22 +449,6 @@ convert_to_temporary_glyphs :: (using font: *Dynamic_Font, s: string, effect_fla
     if (latin_font) flush_my_latin_font(font, effect_flags);
 }
 
-
-// @Refactor: Didn't our add_glyph_to_temporaries just compute this width anyway? Why are we doing it again?
-get_string_width_in_pixels :: (using font: *Dynamic_Font, s: string, effect_flags: Font_Effects = 0) -> s64 #deprecated "Use prepare_text instead." {
-    mark := get_temporary_storage_mark();
-    defer   set_temporary_storage_mark(mark);
-
-	if !font return 0;
-    convert_to_temporary_glyphs(font, s, effect_flags);  // XXX Overload
-
-    sum : s64 = 0;
-    for temporary_glyphs 
-        sum += get_glyph_width_in_pixels(it);
-
-    return sum;
-}
-    
 set_unknown_character :: (using font: *Dynamic_Font, utf32: u32) -> bool {
     index := FT_Get_Char_Index(font.private1, utf32);
     if !index return false;
@@ -518,20 +506,7 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
         result.em_width = FT_ROUND(face.glyph.metrics.width);
     }
-
-    // @dgrisham workaround to get accurate character width
-    glyph_index  = FT_Get_Char_Index(face, #char "W");
-    if glyph_index {
-        FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
-        result.w_width = FT_ROUND(face.glyph.metrics.width);
-    }
-
-    glyph_index  = FT_Get_Char_Index(face, #char "T");
-    if glyph_index {
-        FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
-        result.typical_ascender = FT_ROUND(face.glyph.metrics.horiBearingY);
-    }
-
+    
     glyph_index  = FT_Get_Char_Index(face, #char "T");
     if glyph_index {
         FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
@@ -544,7 +519,14 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         result.typical_descender = FT_ROUND(face.glyph.metrics.horiBearingY - face.glyph.metrics.height);
     }
 
-    e := FT_Select_Charmap(face, FT_ENCODING_UNICODE);
+    // Added by dgrisham -- w_width seems more accurate for predicting text width than em_width for me
+    glyph_index  = FT_Get_Char_Index(face, #char "W");
+    if glyph_index {
+        FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
+        result.w_width = FT_ROUND(face.glyph.metrics.width);
+    }
+
+    e := FT_Select_Charmap(face, .UNICODE);
 
     {
         success := set_unknown_character(result, 0xfffd);  // REPLACEMENT_CHARACTER
@@ -559,7 +541,7 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         
     while 1 {
         length : FT_ULong = 0;
-        tag := cast(FT_Sfnt_Tag) TTAG_GSUB;
+        tag := TTAG_GSUB;
 
         error := FT_Load_Sfnt_Table(face, tag, 0, null, *length);
         if error break;  // Not reall an error since not having a GSUB table is okay actually.
@@ -719,9 +701,9 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
         quad.p3.y  = sy2;
 
         quad.u0 = info.x0 / cast(float) map.width;
-        quad.u1 = (info.x0 + info.width) / cast(float) map.width;
+        quad.u1 = (cast(float) info.x0 + info.width) / map.width;
         quad.v0 = info.y0 / cast(float) map.height;
-        quad.v1 = (info.y0 + info.height) / cast(float) map.height;
+        quad.v1 = (cast(float) info.y0 + info.height) / map.height;
 
         array_add(*font.current_quads, quad);
 		sx += cast(float) info.advance;
@@ -731,7 +713,7 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
 
 #scope_file
 
-ft_library    : *FT_Library = null;
+ft_library    : FT_Library;
 fonts_initted := false;          
 
 // We probably should make different page sizes
@@ -856,9 +838,11 @@ copy_glyph_to_bitmap :: (face: FT_Face, data: *Glyph_Data) {
 
     bitmap := font_line.page.bitmap_data;
 
-    for j : 0..b.rows-1 {
-        for i : 0..b.width-1 {
-            source_pixel := b.buffer[(b.rows - 1 - j) * b.pitch + i];
+    rows  := cast(s32) b.rows; // FreeType has changed the rows and width types to unsigned, and they may be zero
+    width := cast(s32) b.width;
+    for j : 0..rows-1 {
+        for i : 0..width-1 {
+            source_pixel := b.buffer[(rows - 1 - j) * b.pitch + i];
 
             dest_pixel := bitmap.data.data + ((dest_y + j) * bitmap.width + (dest_x + i)) * 4;
             dest_pixel[0] = 255;
@@ -899,7 +883,8 @@ find_or_create_glyph :: (using font: *Dynamic_Font,
         }
 
         if glyph_index {
-            FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+            error := FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+            assert(!error);
         }
     } else {
         assert(glyph_index >= 0);
@@ -958,7 +943,7 @@ get_kerning :: (using font: *Dynamic_Font, prior: *Glyph_Data, current: *Glyph_D
     index_left  := prior.glyph_index_within_font;
     index_right := current.glyph_index_within_font;
 
-    kerning_mode := FT_KERNING_DEFAULT;
+    kerning_mode := cast(u32) FT_Kerning_Mode.DEFAULT;
 
     // @Speed: Is FT_Set_Pixel_Sizes slow?  Do we want to do something about this?
 //    int error;
@@ -1134,7 +1119,7 @@ do_glyph_substitutions :: (using font : *Dynamic_Font, effect_flags: Font_Effect
     }    
 }
 
-read4_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u32 {
+read4_from_offset :: /* inline */ (base: *u8, offset: s64, reversed: bool) -> u32 #expand {  // Would like to inline, but, can't due to #asm in byte_swap.
     ptr := cast(*u32) (base + offset);
     
     if reversed {
@@ -1144,7 +1129,7 @@ read4_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u32 {
     }
 }
 
-read2_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u16 {
+read2_from_offset :: /* inline */ (base: *u8, offset: s64, reversed: bool) -> u16 {  // Would like to inline, but, can't due to #asm in byte_swap.
     ptr := cast(*u16) (base + offset);
     
     if reversed {
@@ -1317,8 +1302,7 @@ temporary_array_reset :: (array: *[..] $T) {
 
 #scope_file
 
-#import "freetype255";
-//#import "freetype28";  Maybe we should upgrade sometime!
+#import "freetype-2.12.1";
 #import "Hash_Table";
 #import "Hash";
 #import "Unicode";

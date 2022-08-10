@@ -76,22 +76,6 @@ Render_API :: enum {
 
 // Document: New init API ... Window creation...
 
-// @Functionality: Create texture render targets. Switch between texture render targets.
-// Threadsafety and cross-threadness of Window_Info.
-simp_init :: (window: Window_Type, window_width: s32 = -1, window_height: s32 = -1, render_width: s32 = -1, render_height: s32 = -1, windowed := true, vsync := true) #deprecated "Use set_render_target instead. Explicit init is no longer required." {
-    info := find_or_add_window_info(window);
-
-    if (window_width < 0) || (window_height < 0) {
-        window_width, window_height = get_render_dimensions(window);
-    }
-    
-    info.window        = window;
-    info.window_width  = window_width;
-    info.window_height = window_height;
-    
-    backend_init(info);
-}
-
 set_render_target :: (window: Window_Type) {
     CheckInit();
 
@@ -143,7 +127,16 @@ update_window :: (window: Window_Type) {
     if c.window == window {
         if (window_width != c.window_width) || (window_height != c.window_height) {
             backend_resize_render_target(<<info);
+
+            // If the user changes the window after setting a shader,
+            // the projection will be out-of-date, so, update it here.
+            // We check state.current_shader because immediate_set_2d_projection will error
+            // if it is not set.
+            if !context.simp.texture_render_target {
+                if state.current_shader  immediate_set_2d_projection(window_width, window_height);
+            }
         }
+        
         state.current_window_info = << info;
     }
 }

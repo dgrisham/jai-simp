@@ -82,14 +82,6 @@ texture_load_from_bitmap :: (using texture: *Texture, bitmap: *Bitmap) -> bool {
     return true;
 }
 
-load_texture_from_file :: (using texture: *Texture, filename: string) -> bool #deprecated "Use texture_load_from_file instead." {
-    return texture_load_from_file(texture, filename);
-}
-
-load_texture_from_bitmap :: (using texture: *Texture, bitmap: *Bitmap) -> bool #deprecated "Use texture_load_from_bitmap instead." {
-    return texture_load_from_bitmap(texture, bitmap);
-}
-
 
 texture_create_render_target :: (width: s32, height: s32, format: Texture_Format, flags: Texture_Flags = 0) -> *Texture {
     CheckInit();  // Set up context.simp.

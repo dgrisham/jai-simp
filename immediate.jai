@@ -83,6 +83,22 @@ immediate_begin :: () {
     CheckInit();
 }
 
+immediate_begin_blend :: () {
+    immediate_begin();
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glEnable(GL_TEXTURE_2D);
+    glBegin(GL_TRIANGLES);
+
+}
+
+immediate_flush_blend :: () {
+    immediate_flush();
+    glEnd();
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
+}
+
 immediate_flush :: () {
     CheckInit();
     if !state.num_vertices return;
@@ -108,6 +124,48 @@ immediate_flush :: () {
 
     DumpGLErrors("glBindBuffer immediate_vbo");
     glBufferData(GL_ARRAY_BUFFER, size_of(Immediate_Vertex) * count, state.vertices.data, GL_STREAM_DRAW);
+    DumpGLErrors("glBufferData immediate_vertices");
+
+    // glCullMode(GL_NONE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    
+    // @Speed:
+    #if true { // !vertex_format_set_to_XCNUU) {
+        set_vertex_format_to_XCNUU(shader);
+        DumpGLErrors("XCNUU");
+	}
+
+	glDrawArrays(GL_TRIANGLES, 0, xx count);
+
+    DumpGLErrors("out");
+}
+
+immediate_flush_multisample :: () {
+    CheckInit();
+    if !state.num_vertices return;
+
+    if !state.current_shader {
+        assert(false, "Tried to immediate_flush when no shader was set.\n");
+        state.num_vertices = 0;
+        return;
+    }
+
+    //
+    // In the long run, we want to send this buffer off to the main thread, probably.
+    // But for now, we just say you can only do this from the main thread, because.
+    //
+
+    shader := state.current_shader;
+    count  := state.num_vertices;
+    state.num_vertices = 0;
+    
+    glBindVertexArray(opengl_is_stupid_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, immediate_vbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    DumpGLErrors("glBindBuffer immediate_vbo");
+    glBufferData(GL_IMAGE_2D_MULTISAMPLE_ARRAY, size_of(Immediate_Vertex) * count, state.vertices.data, GL_STREAM_DRAW);
     DumpGLErrors("glBufferData immediate_vertices");
 
     // glCullMode(GL_NONE);

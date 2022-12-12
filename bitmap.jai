@@ -78,13 +78,14 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
 }
 
 bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool {
-    if bitmap.format != .RGB8 && bitmap.format != .RGBA8 {
+    if bitmap.format != .RGB8 && bitmap.format != .RGBA8 && bitmap.format != .R8 {
         log("Attempt to save a bitmap, but the format % is unhandled.", bitmap.format, flags=.ERROR);
         return false;
     }
 
     components : s32 = 4;
     if bitmap.format == .RGB8 components = 3;
+    if bitmap.format == .R8 components = 1;
     
     stride := bitmap.stride;
     data   := bitmap.data.data;

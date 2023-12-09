@@ -64,10 +64,19 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
         log("Tried to load a bitmap from memory, but it's too big! (2GB max for now).\n", flags=.ERROR);
         return false;
     }
+
+    //
+    // @Speed: We have an extra copy here of the whole bitmap, because
+    // we want to return a Bitmap that uses a system allocator, but
+    // stbi needs us to do stbi_image_free. Maybe there's a way that we can give a newer version of
+    // stbi our own output buffer and we just don't export that method from modules/stb_image...
+    // this would be very nice to fix!
+    //
     
     w, h, channels: s32;
     data := stbi_load_from_memory(memory.data, count32, *w, *h, *channels, 0);
-
+    defer stbi_image_free(data);
+    
     if !data {
         log("Unable to load a bitmap from memory.", flags=.ERROR);
         return false;
@@ -84,26 +93,36 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
     }
 
     components : s32 = 4;
-    if bitmap.format == .RGB8 components = 3;
-    if bitmap.format == .R8 components = 1;
+    if bitmap.format == {
+      case .RGB8; components = 3;
+      case   .R8; components = 1;
+    }
     
     stride := bitmap.stride;
     data   := bitmap.data.data;
     
     name      := temp_c_string(filepath);
     extension := path_extension(filepath);
+
+    if extension != "png" {
+        expected := bitmap.width*components;
+        if bitmap.stride != expected {
+            log_error("When saving '%', the supported file format does not support a custom stride. The stride given in the bitmap is %, which does not match the expected stride %, so bad things may happen now.\n", filepath, bitmap.stride, expected);
+        }
+    }
     
     if extension == {
         case "png"; 
             return stbi_write_png(name, bitmap.width, bitmap.height, components, data, stride) != 0;
         case "tga";
-            return stbi_write_tga(name, bitmap.width, bitmap.height, components, data, stride) != 0;
+            return stbi_write_tga(name, bitmap.width, bitmap.height, components, data) != 0;
         case "bmp";
-            return stbi_write_bmp(name, bitmap.width, bitmap.height, components, data, stride) != 0;
-        case "hdr";
-            return stbi_write_hdr(name, bitmap.width, bitmap.height, components, data, stride) != 0;
+            return stbi_write_bmp(name, bitmap.width, bitmap.height, components, data) != 0;
+        // @Incomplete: stbi_write_hdr needs us to convert the data to floats first.
+        // case "hdr";
+        // return stbi_write_hdr(name, bitmap.width, bitmap.height, components, data) != 0;
         case "jpg";
-            return stbi_write_jpg(name, bitmap.width, bitmap.height, components, data, stride, quality=80) != 0;
+            return stbi_write_jpg(name, bitmap.width, bitmap.height, components, data, quality=80) != 0;
         case;
             log("Bitmap extension '%' is not understood by this code.", extension, flags=.ERROR);
             return false;
@@ -195,6 +214,7 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
 
     bitmap.flags |= .FREE_DATA_ON_DEINIT;  // But, we are not setting the allocator. Is that bad?
 }
+
 
 bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) -> bool {
     channels: s32;

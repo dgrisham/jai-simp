@@ -151,9 +151,6 @@ Dynamic_Font :: struct {
     temporary_glyphs_byte_offsets: [..] int;
     temporary_glyphs_width_in_pixels: s64;
 
-    temporary_glyphs.allocator              = __temporary_allocator;
-    temporary_glyphs_byte_offsets.allocator = __temporary_allocator;
-
     // draw_quads_proc := default_draw_quads_proc;
     current_quads: [..] Font_Quad;
 }
@@ -310,14 +307,11 @@ ensure_fonts_are_initted :: () {
 
 // @Refactor: Factor this together with add_glyph_to_temporaries?
 get_character_width_in_pixels :: (using font: *Dynamic_Font, utf8: *u8, effect_flags: Font_Effects) -> u32 {
-    mark := get_temporary_storage_mark();
-    defer   set_temporary_storage_mark(mark);
-
     glyph := find_or_create_glyph_utf8(font, utf8);
     if !glyph return 0;
 
-    temporary_array_reset(*font.temporary_glyphs);
-    temporary_array_reset(*font.temporary_glyphs_byte_offsets);
+    array_reset(*font.temporary_glyphs);
+    array_reset(*font.temporary_glyphs_byte_offsets);
     assert(font.temporary_glyphs.count == font.temporary_glyphs_byte_offsets.count);
     
     assert(glyph != null);
@@ -342,12 +336,12 @@ accumulate_glyphs_from_font :: (source: *Dynamic_Font, dest: *Dynamic_Font) {
 convert_to_temporary_glyphs :: (using font: *Dynamic_Font, s: string, effect_flags: Font_Effects) {  // XXX using
     glyph_conversion_failed = false;
 
-    temporary_array_reset(*font.temporary_glyphs);
-    temporary_array_reset(*font.temporary_glyphs_byte_offsets);
+    array_reset(*font.temporary_glyphs);
+    array_reset(*font.temporary_glyphs_byte_offsets);
 
     if latin_font {
-        temporary_array_reset(*latin_font.temporary_glyphs);
-        temporary_array_reset(*latin_font.temporary_glyphs_byte_offsets);
+        array_reset(*latin_font.temporary_glyphs);
+        array_reset(*latin_font.temporary_glyphs_byte_offsets);
     }
 
     temporary_glyphs_width_in_pixels = 0;
@@ -519,7 +513,6 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         result.typical_descender = FT_ROUND(face.glyph.metrics.horiBearingY - face.glyph.metrics.height);
     }
 
-    // Added by dgrisham -- w_width seems more accurate for predicting text width than em_width for me
     glyph_index  = FT_Get_Char_Index(face, #char "W");
     if glyph_index {
         FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
@@ -625,6 +618,7 @@ get_font_at_size :: (path: string, name: string, pixel_height: int) -> *Dynamic_
 
 get_font_at_size :: (memory: [] u8, pixel_height: int) -> *Dynamic_Font {
     inline ensure_fonts_are_initted();
+
     result := New(Dynamic_Font);
 
     loaded: *Loaded_Font;
@@ -674,7 +668,6 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
     // @Speed!
     for info: font.temporary_glyphs {
         if !info.page continue;
-        map := *info.page.texture;
 
         sx1 := sx  + cast(float) info.offset_x;
         sx2 := sx1 + cast(float) info.width;
@@ -700,10 +693,13 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
         quad.p2.y  = sy2;
         quad.p3.y  = sy2;
 
-        quad.u0 = info.x0 / cast(float) map.width;
-        quad.u1 = (cast(float) info.x0 + info.width) / map.width;
-        quad.v0 = info.y0 / cast(float) map.height;
-        quad.v1 = (cast(float) info.y0 + info.height) / map.height;
+        width  := info.page.bitmap_data.width;  // *Not* map.width, as map may be dirty.
+        height := info.page.bitmap_data.height; // Ibid.
+        
+        quad.u0 = info.x0 / cast(float) width;
+        quad.u1 = (cast(float) info.x0 + info.width) / width;
+        quad.v0 = info.y0 / cast(float) height;
+        quad.v1 = (cast(float) info.y0 + info.height) / height;
 
         array_add(*font.current_quads, quad);
 		sx += cast(float) info.advance;
@@ -1119,7 +1115,7 @@ do_glyph_substitutions :: (using font : *Dynamic_Font, effect_flags: Font_Effect
     }    
 }
 
-read4_from_offset :: /* inline */ (base: *u8, offset: s64, reversed: bool) -> u32 #expand {  // Would like to inline, but, can't due to #asm in byte_swap.
+read4_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u32 #expand {
     ptr := cast(*u32) (base + offset);
     
     if reversed {
@@ -1129,7 +1125,7 @@ read4_from_offset :: /* inline */ (base: *u8, offset: s64, reversed: bool) -> u3
     }
 }
 
-read2_from_offset :: /* inline */ (base: *u8, offset: s64, reversed: bool) -> u16 {  // Would like to inline, but, can't due to #asm in byte_swap.
+read2_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u16 {
     ptr := cast(*u16) (base + offset);
     
     if reversed {
@@ -1291,13 +1287,6 @@ FT_ROUND :: inline (x: int) -> int {
     if x >= 0 return (x + 0x1f) >> 6;
     return -(((-x) + 0x1f) >> 6);
 }
-
-temporary_array_reset :: (array: *[..] $T) {
-    array.count     = 0;
-    array.allocated = 0;
-    array.data      = null;
-}
-
 
 
 #scope_file

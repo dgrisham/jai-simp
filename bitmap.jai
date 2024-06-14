@@ -1,7 +1,7 @@
 Bitmap :: struct {
     width:  s32;
     height: s32;
-    
+
     mipmap_count: s32 = 1;
 
     data:   [] u8;
@@ -11,7 +11,7 @@ Bitmap :: struct {
         FREE_DATA_ON_DEINIT :: 0x1;
         IS_SRGB             :: 0x2;
     }
-    
+
     format := Texture_Format.BGRA8;
 }
 
@@ -22,7 +22,7 @@ bitmap_alloc :: (using bitmap: *Bitmap, w: s32, h: s32, _format: Texture_Format)
 
     bpp := get_image_bytes_per_texel(_format);
     size := w * h * bpp;
-    
+
     data         = NewArray(size, u8, initialized=false);
     stride       = xx (w*bpp);
 
@@ -34,27 +34,44 @@ deinit :: (bitmap: *Bitmap) {
     if bitmap.flags & .FREE_DATA_ON_DEINIT  free(bitmap.data.data);  // We are currently not tracking where this memory came from...!
 }
 
-bitmap_load :: (bitmap: *Bitmap, filepath: string) -> bool {
-    w, h, channels: s32;
-    data := stbi_load(temp_c_string(filepath), *w, *h, *channels, 0);
+#if OS == .ANDROID {
+    // On Android we use the asset manager to load bitmaps
+    bitmap_load :: (bitmap: *Bitmap, filepath: string) -> bool {
+        Android_File :: #import "Android/File";
+        data, success := Android_File.read_entire_file(context.android_app.activity.assetManager, filepath);
+        if !success {
+            log_error("Unable to load bitmap from asset '%'.", filepath);
+            return false;
+        }
 
-    if !data {
-        log("Unable to load bitmap '%'.", filepath, flags=.ERROR);
-        return false;
+        defer free(data);
+
+        success = bitmap_load_from_memory(bitmap, xx data);
+        return success;
     }
+} else {
+    bitmap_load :: (bitmap: *Bitmap, filepath: string) -> bool {
+        w, h, channels: s32;
+        data := stbi_load(temp_c_string(filepath), *w, *h, *channels, 0);
 
-    // @Speed:
-    //
-    // call stbi_image_free() on the data here and copy it into
-    // memory alloc'd by the jai program. This is to work-around
-    // an issue of calling a different implementation of free()
-    // than the one stb_image is linked against, thus crashing.
-    // :FreeingBitmapDataFromSTBI:
-    //
-    defer stbi_image_free(data);
+        if !data {
+            log("Unable to load bitmap '%'.", filepath, flags=.ERROR);
+            return false;
+        }
 
-    bitmap_load_part_2(bitmap, data, w, h, channels);
-    return true;
+        // @Speed:
+        //
+        // call stbi_image_free() on the data here and copy it into
+        // memory alloc'd by the jai program. This is to work-around
+        // an issue of calling a different implementation of free()
+        // than the one stb_image is linked against, thus crashing.
+        // :FreeingBitmapDataFromSTBI:
+        //
+        defer stbi_image_free(data);
+
+        bitmap_load_part_2(bitmap, data, w, h, channels);
+        return true;
+    }
 }
 
 bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
@@ -72,11 +89,11 @@ bitmap_load_from_memory :: (bitmap: *Bitmap, memory: [] u8) -> bool {
     // stbi our own output buffer and we just don't export that method from modules/stb_image...
     // this would be very nice to fix!
     //
-    
+
     w, h, channels: s32;
     data := stbi_load_from_memory(memory.data, count32, *w, *h, *channels, 0);
     defer stbi_image_free(data);
-    
+
     if !data {
         log("Unable to load a bitmap from memory.", flags=.ERROR);
         return false;
@@ -97,10 +114,10 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
       case .RGB8; components = 3;
       case   .R8; components = 1;
     }
-    
+
     stride := bitmap.stride;
     data   := bitmap.data.data;
-    
+
     name      := temp_c_string(filepath);
     extension := path_extension(filepath);
 
@@ -110,9 +127,9 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
             log_error("When saving '%', the supported file format does not support a custom stride. The stride given in the bitmap is %, which does not match the expected stride %, so bad things may happen now.\n", filepath, bitmap.stride, expected);
         }
     }
-    
+
     if extension == {
-        case "png"; 
+        case "png";
             return stbi_write_png(name, bitmap.width, bitmap.height, components, data, stride) != 0;
         case "tga";
             return stbi_write_tga(name, bitmap.width, bitmap.height, components, data) != 0;
@@ -127,7 +144,7 @@ bitmap_save :: (bitmap: *Bitmap, filepath: string, save_alpha := false) -> bool 
             log("Bitmap extension '%' is not understood by this code.", extension, flags=.ERROR);
             return false;
     }
-    
+
     // return false;
 }
 
@@ -139,13 +156,13 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
         case .RGB8;  channels = 3;
         case .RGBA8; channels = 4;
     }
-    
+
     assert(channels != 0, "Unsuported texture format in bitmap_build_mipmaps.");
 
     // Compute texture size with mipmaps.
     w := bitmap.width;
     h := bitmap.height;
-    
+
     //size, p := get_image_size(bitmap.format, bitmap.width, bitmap.height, 1, mipmap_count);
     p := (w * channels + 3) & -4;
     size := p * h;
@@ -153,7 +170,7 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
     while w != 1 || h != 1 {
         w = max(w/2, 1);
         h = max(h/2, 1);
-        p = (w * channels + 3) & -4; 
+        p = (w * channels + 3) & -4;
         size += p * h;
         m += 1;
     }
@@ -177,7 +194,7 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
     input_h := h;
     input_ptr := data_tmp;
     input_stride := p;
-    
+
     alpha :s32 = -1;
     if channels == 4 alpha = 3;
 
@@ -189,13 +206,13 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
 
         if bitmap.flags & .IS_SRGB stbir_resize_uint8_srgb(input_ptr, input_w, input_h, input_stride, ptr, w, h, p, channels, alpha, flags=0);
         else                       stbir_resize_uint8     (input_ptr, input_w, input_h, input_stride, ptr, w, h, p, channels);
-        
+
         input_w      = w;
         input_h      = h;
         input_ptr    = ptr;
         input_stride = p;
     }
-    
+
     assert(size == input_ptr - data_tmp + p * h * channels);
 
     // Update bitmap members.
@@ -214,7 +231,6 @@ bitmap_build_mipmaps :: (bitmap: *Bitmap) {
 
     bitmap.flags |= .FREE_DATA_ON_DEINIT;  // But, we are not setting the allocator. Is that bad?
 }
-
 
 bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) -> bool {
     channels: s32;
@@ -245,6 +261,71 @@ bitmap_resize :: (bitmap: *Bitmap, w: s32, h: s32, resized_bitmap: *Bitmap) -> b
     if result != 1 return false;
 
     memcpy(resized_bitmap.data.data, data, size);
+    return true;
+}
+
+bitmap_resize_and_save :: (bitmap: *Bitmap, filepath: string, w: s32, h: s32, save_alpha := false) -> bool {
+    channels: s32;
+    if bitmap.format == {
+        case .R8;    channels = 1;
+        case .RG8;   channels = 2;
+        case .RGB8;  channels = 3;
+        case .RGBA8; channels = 4;
+    }
+    assert(channels != 0, "Unsuported texture format in bitmap_resize.");
+
+    bpp := get_image_bytes_per_texel(bitmap.format);
+    output_stride := cast(s32) (w * bpp);
+
+    size := output_stride * h;
+    data := alloc(size);
+    defer free(data);
+
+    alpha: s32 = cast(s32) ifx channels == 4 then 3 else -1;
+    result: s32;
+    if bitmap.flags & .IS_SRGB {
+        result = stbir_resize_uint8_srgb(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels, alpha, flags=0);
+    } else {
+        result = stbir_resize_uint8(bitmap.data.data, bitmap.width, bitmap.height, bitmap.stride, data, w, h, output_stride, channels);
+    }
+    if result != 1 return false;
+
+    components : s32 = 4;
+    if bitmap.format == {
+      case .RGB8; components = 3;
+      case   .R8; components = 1;
+    }
+
+    stride := output_stride;
+    // save_data   := resized_bitmap.data.data;
+
+    name      := temp_c_string(filepath);
+    extension := path_extension(filepath);
+
+    if extension != "png" {
+        expected := bitmap.width*components;
+        if bitmap.stride != expected {
+            log_error("When saving '%', the supported file format does not support a custom stride. The stride given in the bitmap is %, which does not match the expected stride %, so bad things may happen now.\n", filepath, bitmap.stride, expected);
+        }
+    }
+
+    if extension == {
+        case "png";
+            return stbi_write_png(name, w, h, components, data, stride) != 0;
+        case "tga";
+            return stbi_write_tga(name, w, h, components, data) != 0;
+        case "bmp";
+            return stbi_write_bmp(name, w, h, components, data) != 0;
+        // @Incomplete: stbi_write_hdr needs us to convert the data to floats first.
+        // case "hdr";
+        // return stbi_write_hdr(name, w, h, components, data) != 0;
+        case "jpg";
+            return stbi_write_jpg(name, w, h, components, data, quality=80) != 0;
+        case;
+            log("Bitmap extension '%' is not understood by this code.", extension, flags=.ERROR);
+            return false;
+    }
+
     return true;
 }
 

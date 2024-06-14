@@ -15,17 +15,24 @@ main :: () {
         Windows.timeBeginPeriod(1);
     }
 
-    my_window = create_window(window_width, window_height, "A Window");
+    WANTED_MSAA :: 8;
+    // On Linux, we need to pass the MSAA value to create_window
+    my_window = create_window(window_width, window_height, "A Window", wanted_msaa = WANTED_MSAA);
+    log("Wanted MSAA: %\nChosen MSAA: %", WANTED_MSAA, msaa);
+
+    // On other operating systems, the MSAA value needs to be passed to *_create_context, so we
+    // need to have an extra step here if you want MSAA.
+    msaa := Simp.prepare_window(my_window, wanted_msaa = WANTED_MSAA);
 
     // Actual render size in pixels can be different from the window dimensions we specified above (for example on high-resolution displays on macOS/iOS).
     window_width, window_height = Simp.get_render_dimensions(my_window);
 
-    Simp.set_render_target(my_window);
-    
+    Simp.set_render_target(my_window, .LEFT_HANDED);
+
     my_init_fonts();
     success := Simp.texture_load_from_file(*image_test, "image_test.jpg");
     assert(success);
-    
+
     quit := false;
     want_screenshot := false;
     while !quit {
@@ -33,7 +40,7 @@ main :: () {
 
         for Input.get_window_resizes() {
             Simp.update_window(it.window);  // Simp will do nothing if it doesn't care about this window.
-            
+
             if it.window == my_window {
                 should_reinit := (it.width != window_width) || (it.height != window_height);
 
@@ -79,7 +86,7 @@ main :: () {
             // subsequent frame, or else launch a thread to do this.
             async_read := Simp.pixel_read_begin(null, .RGBA8);
             bitmap     := Simp.pixel_read_end(async_read);
-            
+
             filename := tprint("screenshot%.png\0", screenshot_index);
 
             #import "stb_image_write";
@@ -89,7 +96,7 @@ main :: () {
 
             Simp.deinit(*bitmap);
         }
-        
+
         sleep_milliseconds(10);
         reset_temporary_storage();
     }
@@ -97,11 +104,11 @@ main :: () {
 
 draw_one_frame :: () {
     Simp.clear_render_target(.15, .08, .08, 1);
-    
+
     Simp.set_shader_for_color();
 
-    time := get_time();
-    
+    time := seconds_since_init();
+
     // This is our own code to set up a rotating square:
     {
         b := cast(float)window_height / 10;
@@ -109,13 +116,13 @@ draw_one_frame :: () {
         p.x = cast(float)(window_width  / 2);
         p.y = cast(float)(window_height / 2);
 
-        theta := cast(float) fmod_cycling(time, TAU);    
+        theta := cast(float) fmod_cycling(time, TAU);
 
         ct := cos(theta);
         st := sin(theta);
-        
-        w := make_vector2(b*ct, b*st);
-        h := make_vector2(b*st, -b*ct);
+
+        w := Vector2.{b*ct, b*st};
+        h := Vector2.{b*st, -b*ct};
 
         p0 := p - w - h;
         p1 := p + w - h;
@@ -127,35 +134,36 @@ draw_one_frame :: () {
         c1 := Vector4.{0, 1, 0, a};
         c2 := Vector4.{0, 0, 1, a};
         c3 := Vector4.{1, 1, 1, a};
-        
+
         Simp.immediate_quad(p0, p1, p2, p3, c0, c1, c2, c3);
     }
 
     // Draw some text.
     {
         // Do a bunch of wacky math to figure out the text color.
-        theta := cast(float) fmod_cycling(time*3, TAU);    
+        theta := cast(float) fmod_cycling(time*3, TAU);
+
         color: Vector4;
         color.x = cos(theta)*.5+.5;
         Clamp(*color.x, 0, 1);
         color.y = 1;
-        color.z = sin(theta)*.5+.5;
+        color.z = sin(theta)*-.5+.5;
         Clamp(*color.z, 0, 1);
         color.w = 1;
 
         // Now, to draw the text:
         text := "Simp!";
-        
+
         // We could just call Simp.draw_text to draw text! But we want to know the width
         // so that we can center the text, and to find the width, we have to do all the
         // text layout. So it makes sense just to draw the prepared text after that,
         // so there's a special routine, "draw_prepared_text", that draws the thing
         // you just prepared and got the width of.
-        
+
         text_width := Simp.prepare_text(my_font, text);
-        
+
         text_x := (window_width - text_width) / 2;
-        text_y := window_height/2 - my_font.character_height/4;
+        text_y := window_height/2 + my_font.character_height/4;
 
         Simp.draw_prepared_text(my_font, text_x, text_y, color);
     }
@@ -169,12 +177,12 @@ draw_one_frame :: () {
         Simp.immediate_begin();
 
         w := window_height/8.0;
+        y0 := cast(float) window_height;
 
-        v2 :: make_vector2;
-        Simp.immediate_quad(v2(0, 0), v2(w, 0), v2(w, w), v2(0, w));
+        Simp.immediate_quad(.{0, y0-w}, .{w, y0-w}, .{w, y0}, .{0, y0});
         Simp.immediate_flush();
     }
-    
+
     Simp.swap_buffers(my_window);
 }
 
@@ -187,7 +195,7 @@ my_init_fonts :: () {
         set_working_directory(path);
         working_directory_set = true;
     }
-    
+
     pixel_height := window_height / 24;
 
     // @Cleanup: Don't have path + name be separate.

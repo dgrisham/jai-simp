@@ -129,8 +129,6 @@ Dynamic_Font :: struct {
     typical_ascender:       int;
     typical_descender:      int;
     em_width:               int;
-    // Added by dgrisham
-    w_width:                int;
     
     y_offset_for_my_latin_characters: float;
     y_offset_for_centering: int;
@@ -292,7 +290,13 @@ make_loaded_font :: (name: string, data: [] u8) -> *Loaded_Font {
 }
 
 make_loaded_font :: (filename: string) -> (font: *Loaded_Font) {
-    s, success := read_entire_file(filename);
+    #if OS == .ANDROID {
+        Android_File :: #import "Android/File";
+        log("Loading asset %", filename);
+        s, success := Android_File.read_entire_file(context.android_app.activity.assetManager, filename);
+    } else {
+        s, success := read_entire_file(filename);
+    }
     if !success return null;
 
     loaded := make_loaded_font(filename, cast([] u8) s);
@@ -313,7 +317,7 @@ get_character_width_in_pixels :: (using font: *Dynamic_Font, utf8: *u8, effect_f
     array_reset(*font.temporary_glyphs);
     array_reset(*font.temporary_glyphs_byte_offsets);
     assert(font.temporary_glyphs.count == font.temporary_glyphs_byte_offsets.count);
-    
+
     assert(glyph != null);
 
     array_add(*font.temporary_glyphs, glyph);
@@ -475,7 +479,7 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
     face := loaded_font.face;
 
     success := FT_Set_Pixel_Sizes(face, 0, xx pixel_height);
-    
+
     result.private1 = face;
     result.character_height = pixel_height;
 
@@ -500,7 +504,7 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
         result.em_width = FT_ROUND(face.glyph.metrics.width);
     }
-    
+
     glyph_index  = FT_Get_Char_Index(face, #char "T");
     if glyph_index {
         FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
@@ -513,12 +517,6 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
         result.typical_descender = FT_ROUND(face.glyph.metrics.horiBearingY - face.glyph.metrics.height);
     }
 
-    glyph_index  = FT_Get_Char_Index(face, #char "W");
-    if glyph_index {
-        FT_Load_Glyph(face, glyph_index, FT_LOAD_DEFAULT);
-        result.w_width = FT_ROUND(face.glyph.metrics.width);
-    }
-
     e := FT_Select_Charmap(face, .UNICODE);
 
     {
@@ -529,16 +527,16 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
             log_error("Unable to set unknown character for font '%1'.\n", basename);
         }
     }
-    
+
     font := result;
-        
+
     while 1 {
         length : FT_ULong = 0;
         tag := TTAG_GSUB;
 
         error := FT_Load_Sfnt_Table(face, tag, 0, null, *length);
         if error break;  // Not reall an error since not having a GSUB table is okay actually.
-        
+
         buffer := alloc(cast(s64) length);
         defer free(buffer);
         if !buffer break;
@@ -600,19 +598,19 @@ load_font_part_2 :: (result: *Dynamic_Font, loaded_font: Loaded_Font, pixel_heig
 
 get_font_at_size :: (path: string, name: string, pixel_height: int) -> *Dynamic_Font {
     inline ensure_fonts_are_initted();
-    
+
     for dynamic_fonts {
         if (it.character_height != pixel_height) continue;
         if (it.name != name) continue;
 
         return it;
     }
-	
+
     result := load_font(path, name, pixel_height);
     if !result {
         log_error("Unable to load font '%1' from '%2'. Returning null.\n", name, path);
     }
-    
+
     return result;
 }
 
@@ -633,7 +631,7 @@ get_font_at_size :: (memory: [] u8, pixel_height: int) -> *Dynamic_Font {
         loaded = make_loaded_font("", memory);
         array_add(*loaded_memory_fonts, loaded);
     }
-    
+
     load_font_part_2(result, << loaded, pixel_height);
     return result;
 }
@@ -655,10 +653,10 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
                                      x: s64, y: s64,
                                      effect_flags: Font_Effects) {
     assert(font != null);
-    
+
     array_reset_keeping_memory(*font.current_quads);
     array_reserve(*font.current_quads, font.temporary_glyphs.count);
-    
+
     maybe_offset := false;
     if font.y_offset_for_my_latin_characters maybe_offset = true;
 
@@ -672,9 +670,15 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
         sx1 := sx  + cast(float) info.offset_x;
         sx2 := sx1 + cast(float) info.width;
 
-        sy2 := sy  + cast(float) info.ascent;
-        sy1 := sy2 - cast(float) info.height;
-
+        sy1, sy2: float = ---;
+        if context.simp.coordinate_system == .LEFT_HANDED {
+            sy1 = sy  - cast(float) info.ascent;
+            sy2 = sy1 + cast(float) info.height;
+        } else {
+            sy2 = sy  + cast(float) info.ascent;
+            sy1 = sy2 - cast(float) info.height;
+        }
+        
         if maybe_offset && is_latin(info.utf32) {
             // e.g. our Chinese font did not seem to make characters
             // line up properly.
@@ -684,22 +688,24 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
 
         quad: Font_Quad = ---;
         quad.glyph = info;
-        quad.p0.x  = sx1;
-        quad.p1.x  = sx2;
-        quad.p2.x  = sx2;
-        quad.p3.x  = sx1;
-        quad.p0.y  = sy1;
-        quad.p1.y  = sy1;
-        quad.p2.y  = sy2;
-        quad.p3.y  = sy2;
+        quad.p0 = .{sx1, sy1};
+        quad.p1 = .{sx2, sy1};
+        quad.p2 = .{sx2, sy2};
+        quad.p3 = .{sx1, sy2};
 
         width  := info.page.bitmap_data.width;  // *Not* map.width, as map may be dirty.
         height := info.page.bitmap_data.height; // Ibid.
-        
+
         quad.u0 = info.x0 / cast(float) width;
         quad.u1 = (cast(float) info.x0 + info.width) / width;
-        quad.v0 = info.y0 / cast(float) height;
-        quad.v1 = (cast(float) info.y0 + info.height) / height;
+
+        if context.simp.coordinate_system == .LEFT_HANDED {
+            quad.v1 = info.y0 / cast(float) height;
+            quad.v0 = (cast(float) info.y0 + info.height) / height;
+        } else {
+            quad.v0 = info.y0 / cast(float) height;
+            quad.v1 = (cast(float) info.y0 + info.height) / height;
+        }
 
         array_add(*font.current_quads, quad);
 		sx += cast(float) info.advance;
@@ -710,7 +716,7 @@ generate_quads_for_prepared_text :: (font: *Dynamic_Font,
 #scope_file
 
 ft_library    : FT_Library;
-fonts_initted := false;          
+fonts_initted := false;
 
 // We probably should make different page sizes
 // for different fonts.
@@ -791,7 +797,7 @@ get_font_line :: (width: int, height: int) -> *Font_Line {
 
     array_add(*font_pages, page);
 
-    return find_line_within_page(page, width, height);  // If we didn't find it somehow, we lose!  
+    return find_line_within_page(page, width, height);  // If we didn't find it somehow, we lose!
 }
 
 copy_glyph_to_bitmap :: (face: FT_Face, data: *Glyph_Data) {
@@ -847,14 +853,14 @@ copy_glyph_to_bitmap :: (face: FT_Face, data: *Glyph_Data) {
             dest_pixel[3] = source_pixel;
         }
     }
-    
+
     font_line.bitmap_cursor_x += cast(s16) b.width;
     font_line.page.dirty = true;
 }
 
 // @Hack XXXXXXXXXX Major Hack... we don't know how to convert glyph IDs to utf32, so for now we store some glyphs by negative-glyph-index in the hash table.  These may be dupes of entries we already have in there as utf32.  We ought to fix this!
 
-find_or_create_glyph :: (using font: *Dynamic_Font, 
+find_or_create_glyph :: (using font: *Dynamic_Font,
                          utf32: u32, glyph_index: u32, hash_key: int) -> *Glyph_Data {
 
     data, success := table_find(*font.glyph_lookup, hash_key);
@@ -884,8 +890,8 @@ find_or_create_glyph :: (using font: *Dynamic_Font,
         }
     } else {
         assert(glyph_index >= 0);
-        FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
-        return null;
+        error := FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+        assert(!error);
     }
 
     data = cast(*Glyph_Data) get(*glyph_and_line_pool, size_of(Glyph_Data));
@@ -903,7 +909,7 @@ find_or_create_glyph :: (font: *Dynamic_Font, utf32: u32) -> *Glyph_Data {
     return find_or_create_glyph(font, utf32, 0, utf32);
 }
 
-one_utf32_char :: inline (s: *u8) -> u32 { 
+one_utf32_char :: inline (s: *u8) -> u32 {
     utf32 := character_utf8_to_utf32(s, DUMMY_SOURCE_LENGTH);  // @BufferLength @Robustness
     return utf32;
 } @NoProfile
@@ -943,7 +949,7 @@ get_kerning :: (using font: *Dynamic_Font, prior: *Glyph_Data, current: *Glyph_D
 
     // @Speed: Is FT_Set_Pixel_Sizes slow?  Do we want to do something about this?
 //    int error;
-//    error = FT_Set_Pixel_Sizes(face, 0, character_height);  
+//    error = FT_Set_Pixel_Sizes(face, 0, character_height);
 //    assert(!error);
 
 
@@ -966,7 +972,7 @@ get_index_within_format_1_coverage_table :: (table: *Font_Coverage_Table, glyph:
     // @Cleanup: This whole proc can be replaced by a generic array find.
 
     for table.glyphs
-        if it == glyph.glyph_index_within_font 
+        if it == glyph.glyph_index_within_font
             return it_index;
 
     return -1;
@@ -1013,7 +1019,7 @@ single_substitute :: (using font: *Dynamic_Font, feature: *Font_Feature,
                     glyph_id := orig.glyph_index_within_font + cast(u32) subtable.delta_glyph_id;
                     new_glyph := find_or_create_glyph(font, 0, glyph_id, glyph_id_to_hash_key(glyph_id));
                     if !new_glyph return null;
-                    
+
                     new_glyph.utf32 = orig_utf32;
                     return new_glyph;
                 } else if subtable.format == 2 {  // SingleSubstFormat2
@@ -1060,7 +1066,7 @@ add_glyph_to_temporaries :: inline (font: *Dynamic_Font, glyph: *Glyph_Data, byt
     array_add(*font.temporary_glyphs, glyph);
     array_add(*font.temporary_glyphs_byte_offsets, byte_offset);
     assert(font.temporary_glyphs.count == font.temporary_glyphs_byte_offsets.count);
-    
+
     font.temporary_glyphs_width_in_pixels += glyph.advance;
 
     //
@@ -1091,10 +1097,11 @@ do_glyph_substitutions :: (using font : *Dynamic_Font, effect_flags: Font_Effect
     if effect_flags & .LINING_FIGURES {
         // Substitute lining figures...
         for * ptr : temporary_glyphs {
-            glyph := << ptr;
-            << ptr = single_substitute(font, feature_lining_numbers, glyph);
+            glyph := ptr.*;
+            sub := single_substitute(font, feature_lining_numbers, glyph);
+            if sub then ptr.* = sub;
         }
-    }    
+    }
 
     if effect_flags & .SMALLCAPS {
         // Substitute smallcaps...
@@ -1103,21 +1110,21 @@ do_glyph_substitutions :: (using font : *Dynamic_Font, effect_flags: Font_Effect
             // then just do lining figures if it's a digit... otherwise we end
             // up converting digits to smallcaps and that doesn't look right.
 
-            glyph := << ptr;
+            glyph := ptr.*;
             if effect_flags & .LINING_FIGURES {
                 utf32 := glyph.utf32;
                 if ((utf32 < 127) && isdigit(utf32)) continue;
             }
 
             sub := single_substitute(font, feature_smallcaps, glyph);
-            if sub { << ptr = sub; }
+            if sub ptr.* = sub;
         }
-    }    
+    }
 }
 
 read4_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u32 #expand {
     ptr := cast(*u32) (base + offset);
-    
+
     if reversed {
         return byte_swap(<< ptr);
     } else {
@@ -1127,7 +1134,7 @@ read4_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u32 #exp
 
 read2_from_offset :: inline (base: *u8, offset: s64, reversed: bool) -> u16 {
     ptr := cast(*u16) (base + offset);
-    
+
     if reversed {
         return byte_swap(<< ptr);
     } else {
@@ -1140,7 +1147,7 @@ find_feature :: (using font: *Dynamic_Font, feature_label: string) -> *Font_Feat
     s1 : u32 = feature_label[1];
     s2 : u32 = feature_label[2];
     s3 : u32 = feature_label[3];
-    
+
     tag := s3 | (s2 << 8) | (s1 << 16) | (s0 << 24);
 
     for * features  if it.feature_tag == tag return it;
@@ -1168,7 +1175,7 @@ read_coverage_table :: (coverage_table: *u8, reversed: bool) -> *Font_Coverage_T
     } else if format == 2 {
         num_records := read2_from_offset(coverage_table, 2, reversed);
         result.range_records = NewArray(num_records, Font_Range_Record);
-        
+
         for * result.range_records {
             i := it_index;
 
@@ -1177,7 +1184,7 @@ read_coverage_table :: (coverage_table: *u8, reversed: bool) -> *Font_Coverage_T
             it.start_coverage_index = read2_from_offset(coverage_table, 8 + i * 6, reversed);
         }
     }
-    
+
     return result;
 }
 
@@ -1239,11 +1246,11 @@ expand_feature :: (using font: *Dynamic_Font, feature: *Font_Feature, lookup_lis
         for * sub_dest : dest.subtables {
             offset := 6 + it_index * 2;
             subtable_offset := read2_from_offset(table, offset, reversed);
-            
+
             subtable   := table + subtable_offset;
             table_type := read2_from_offset(subtable, 0, reversed);
             sub_dest.format = table_type;
-            
+
             if lookup_type == 1 {  // Single Substitution Table
                 coverage_offset := read2_from_offset(subtable, 2, reversed);
                 coverage_table := subtable + coverage_offset;

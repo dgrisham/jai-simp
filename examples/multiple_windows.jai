@@ -31,7 +31,7 @@ main :: () {
 
     my_init_fonts(*window_a_font, window_a_width, window_a_height, FONT_A_SCALE);
     my_init_fonts(*window_b_font, window_b_width, window_b_height, FONT_B_SCALE);
-    
+
     quit := false;
     while !quit {
         Input.update_window_events();
@@ -69,7 +69,7 @@ main :: () {
         }
 
         draw_one_frame();
-        
+
         sleep_milliseconds(10);
         reset_temporary_storage();
     }
@@ -80,7 +80,7 @@ draw_window_a :: () {
     Simp.clear_render_target(.15, .08, .08, 1);
     Simp.set_shader_for_color();
 
-    time := get_time();
+    time := seconds_since_init();
 
     // This is our own code to set up a rotating square:
     {
@@ -89,13 +89,13 @@ draw_window_a :: () {
         p.x = cast(float)(window_a_width  / 2);
         p.y = cast(float)(window_a_height / 2);
 
-        theta := cast(float) fmod_cycling(time, TAU);    
+        theta := cast(float) fmod_cycling(time, TAU);
 
         ct := cos(theta);
         st := sin(theta);
-        
-        w := make_vector2(b*ct, b*st);
-        h := make_vector2(b*st, -b*ct);
+
+        w := Vector2.{b*ct, b*st};
+        h := Vector2.{b*st, -b*ct};
 
         p0 := p - w - h;
         p1 := p + w - h;
@@ -107,7 +107,7 @@ draw_window_a :: () {
         c1 := Vector4.{0, 1, 0, a};
         c2 := Vector4.{0, 0, 1, a};
         c3 := Vector4.{1, 1, 1, a};
-        
+
         Simp.immediate_quad(p0, p1, p2, p3, c0, c1, c2, c3);
     }
 
@@ -117,7 +117,7 @@ draw_window_a :: () {
 
         // Now, to draw the text:
         text := "Simp!";
-        
+
         // We could just call Simp.draw_text to draw text! But we want to know the width
         // so that we can center the text, and to find the width, we have to do all the
         // text layout. So it makes sense just to draw the prepared text after that,
@@ -125,7 +125,7 @@ draw_window_a :: () {
         // you just prepared and got the width of.
 
         text_width := Simp.prepare_text(window_a_font, text);
-        
+
         text_x := (window_a_width - text_width) / 2;
         text_y := window_a_height/2 - window_a_font.character_height/4;
 
@@ -140,9 +140,9 @@ draw_window_b :: () {
     Simp.clear_render_target(color.x, color.y, color.z, color.w);
 
     text := "Hello, Sailor!";
-        
+
     text_width := Simp.prepare_text(window_b_font, text);
-        
+
     text_x := (window_b_width - text_width) / 2;
     text_y := window_b_height/2 - window_b_font.character_height/4;
 
@@ -165,7 +165,7 @@ my_init_fonts :: (result: **Simp.Dynamic_Font, width: s32, height: s32, scale: f
         set_working_directory(path);
         working_directory_set = true;
     }
-    
+
     pixel_height := cast(s32) floor(height * scale + .5);
 
     // @Cleanup: Don't have path + name be separate.
@@ -176,10 +176,10 @@ my_init_fonts :: (result: **Simp.Dynamic_Font, width: s32, height: s32, scale: f
 
 get_timed_hue :: () -> Vector4 {
     // Just get an RGB color that changes over time.
-    
-    time := get_time();
 
-    theta := cast(float) fmod_cycling(time*3, TAU);    
+    time := seconds_since_init();
+
+    theta := cast(float) fmod_cycling(time*3, TAU);
     color: Vector4;
     color.x = cos(theta)*.5+.5;
     Clamp(*color.x, 0, 1);

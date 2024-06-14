@@ -34,8 +34,10 @@ set_shader_for_text :: () {
 set_shader_for_images :: (texture: *Texture) {
     CheckInit();
     immediate_flush();
-    if state.current_shader != *shader_sprite {
-        immediate_set_shader(*shader_sprite);
+
+    target_shader := ifx context.simp.coordinate_system == .LEFT_HANDED then *shader_sprite_left_handed else *shader_sprite_right_handed;
+    if state.current_shader != target_shader {
+        immediate_set_shader(target_shader);
         set_projection();
     }
 
@@ -45,4 +47,5 @@ set_shader_for_images :: (texture: *Texture) {
 shader_text:   Shader;
 shader_color:  Shader;
 shader_color_with_blend:  Shader;
-shader_sprite: Shader;
+shader_sprite_right_handed: Shader;
+shader_sprite_left\_handed: Shader;

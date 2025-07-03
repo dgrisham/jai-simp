@@ -9,8 +9,8 @@ render_texture_height :: 540;
 
 // Each frame, we render separate scenes to render_target_a and render_target_b.
 // Then we draw those textures into the final window.
-render_target_a: *Simp.Texture;
-render_target_b: *Simp.Texture;
+render_target_a: Simp.Texture;
+render_target_b: Simp.Texture;
 
 main :: () {
     #if OS == .WINDOWS {
@@ -64,7 +64,7 @@ main :: () {
 }
 
 render_texture_1 :: () {
-    Simp.set_render_target(render_target_a);
+    Simp.set_render_target(*render_target_a);
     Simp.clear_render_target(.15, .15, .15, 1);
 
     Simp.set_shader_for_color();
@@ -105,7 +105,7 @@ render_texture_1 :: () {
 }
 
 render_texture_2 :: () {
-    Simp.set_render_target(render_target_b);
+    Simp.set_render_target(*render_target_b);
 
     color := Vector4.{.5, .3, .3, 1};
     Simp.clear_render_target(color.x, color.y, color.z, color.w);
@@ -186,7 +186,7 @@ draw_one_frame :: () {
     y0 := (window_height - rt_height) * .5 - offset.y;
 
     {
-        Simp.set_shader_for_images(render_target_a);
+        Simp.set_shader_for_images(*render_target_a);
         c0 := Vector4.{1, 1, 1, 1};
         Simp.immediate_quad(x0, y0, x0 + rt_width, y0 + rt_height, c0);
     }
@@ -195,7 +195,7 @@ draw_one_frame :: () {
     y0 += 2*offset.y;
 
     {
-        Simp.set_shader_for_images(render_target_b);
+        Simp.set_shader_for_images(*render_target_b);
         c0 := Vector4.{1, 1, 1, 1};
         Simp.immediate_quad(x0, y0, x0 + rt_width, y0 + rt_height, c0);
     }

@@ -82,18 +82,23 @@ texture_load_from_bitmap :: (using texture: *Texture, bitmap: *Bitmap) -> bool {
     return true;
 }
 
-
-texture_create_render_target :: (width: s32, height: s32, format: Texture_Format, flags: Texture_Flags = 0) -> *Texture {
+texture_create_render_target :: (width: s32, height: s32, format: Texture_Format, flags: Texture_Flags = 0) -> Texture {
     CheckInit();  // Set up context.simp.
 
-    texture := New(Texture);
+    texture: Texture;
 
     texture.width  = width;
     texture.height = height;
     texture.format = format;
     texture.flags  = flags | .Render_Target;
 
-    backend_create_render_target(texture);
+    backend_create_render_target(*texture);
     
     return texture;
+}
+
+texture_destroy :: (texture: *Texture) {
+    CheckInit();  // Set up context.simp.
+    backend_texture_destroy(texture);
+    texture.* = .{};
 }

@@ -92,7 +92,7 @@ Font_Effects :: enum_flags u32 {
 Glyph_Data :: struct {
     utf32: u32;
     glyph_index_within_font: u32;
-    
+
     x0, y0: s16;
     width, height: u32;
 
@@ -129,7 +129,7 @@ Dynamic_Font :: struct {
     typical_ascender:       int;
     typical_descender:      int;
     em_width:               int;
-    
+
     y_offset_for_my_latin_characters: float;
     y_offset_for_centering: int;
 
@@ -138,7 +138,7 @@ Dynamic_Font :: struct {
     glyph_conversion_failed: bool;  // The most recent call to convert_to_temporary_glyphs() found a character it didn't know.
     glyph_index_for_unknown_character: u32;
     utf32_for_unknown_character := 0xfffd;  // This is Unicode 'REPLACEMENT CHARACTER'.
-    
+
     features: [..] Font_Feature;
 
     feature_smallcaps:      *Font_Feature;
@@ -224,14 +224,14 @@ Font_Feature :: struct {
 
 init_fonts :: (_page_size_x: s32 = -1, _page_size_y: s32 = -1) {
     assert(!fonts_initted);
-    
+
     if (_page_size_x >= 0) || (_page_size_y >= 0) {
         assert(_page_size_x >= 64);
         assert(_page_size_y >= 64);
         page_size_x = _page_size_x;
         page_size_y = _page_size_y;
     }
-    
+
     fonts_initted = true;
 
     error := FT_Init_FreeType(*ft_library);
@@ -863,7 +863,7 @@ copy_glyph_to_bitmap :: (face: FT_Face, data: *Glyph_Data) {
 find_or_create_glyph :: (using font: *Dynamic_Font,
                          utf32: u32, glyph_index: u32, hash_key: int) -> *Glyph_Data {
 
-    data, success := table_find(*font.glyph_lookup, hash_key);
+    success, data := table_find_new(*font.glyph_lookup, hash_key);
     if success  return data;
 
     face := font.private1;  // XXX Why not using?

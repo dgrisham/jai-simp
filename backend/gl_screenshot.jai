@@ -26,7 +26,7 @@ Pixel_Read :: struct {
 }
 
 Pixel_Read_Platform :: struct {
-    intermediate_texture: *Texture;  // Not currently used.
+    intermediate_texture: Texture;
     pbo: GLuint;
     src\_fbo_handle: GLuint;
     dest_fbo_handle: GLuint;
@@ -57,7 +57,7 @@ get_bitmap_from_texture :: (map: *Texture, format:=Texture_Format.Unknown, width
 // Call pixel_read_is_done() to know whether the read has finished, in which case,
 // when you call pixel_read_end() it will return very quickly. Otherwise, pixel_read_end()
 // will block until the screenshot is done.
-pixel_read_begin :: (source: *Texture /* may be null */, dest_format: Texture_Format, width: s32 = -1, height: s32 = -1, srgb := false, flip := false) -> *Pixel_Read #must {
+pixel_read_begin :: (source: *Texture /* may be null */, dest_format: Texture_Format, width: s32 = -1, height: s32 = -1, srgb := false, flip := false) -> *Pixel_Read {
     assert((dest_format == .RGB8) || (dest_format == .RGBA8));
     
     reader := New(Pixel_Read);  // @Cleanup: Don't use the heap?
@@ -98,7 +98,7 @@ pixel_read_begin :: (source: *Texture /* may be null */, dest_format: Texture_Fo
     if source && (source.flags & .Multisampled ||
                   source.format != dest_format || src_srgb   != srgb || 
                   source.width  != width       || source.height != height) {
-        if reader.intermediate_texture == null {
+        if reader.intermediate_texture.gl_handle == 0 {
             flags: Texture_Flags;
             if srgb flags |= .sRGB;
             reader.intermediate_texture = texture_create_render_target(width, height, dest_format, flags);
@@ -120,7 +120,7 @@ pixel_read_begin :: (source: *Texture /* may be null */, dest_format: Texture_Fo
             src_height = h;
         }
 
-        dest_target := get_gl_target(reader.intermediate_texture);
+        dest_target := get_gl_target(*reader.intermediate_texture);
         dest_handle := reader.intermediate_texture.gl_handle;
 
         source_target := get_gl_target(source);
@@ -135,7 +135,7 @@ pixel_read_begin :: (source: *Texture /* may be null */, dest_format: Texture_Fo
         unbind_draw_fbo(dest_target,   dest_handle,      old_draw);
         unbind_read_fbo(source_target, source.gl_handle, old_read);
 
-        source = reader.intermediate_texture;
+        source = *reader.intermediate_texture;
     }
 
     source_handle: GLuint;  // 0 means read from the frame buffer.
@@ -264,6 +264,8 @@ pixel_read_end :: (reader: *Pixel_Read, bitmap: *Bitmap) {
 
     glDeleteBuffers(1, *reader.pbo);
     reader.pbo = 0;
+
+    texture_destroy(*reader.intermediate_texture);
     free(reader);
 }
 

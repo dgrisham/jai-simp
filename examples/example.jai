@@ -18,11 +18,11 @@ main :: () {
     WANTED_MSAA :: 8;
     // On Linux, we need to pass the MSAA value to create_window
     my_window = create_window(window_width, window_height, "A Window", wanted_msaa = WANTED_MSAA);
-    log("Wanted MSAA: %\nChosen MSAA: %", WANTED_MSAA, msaa);
 
     // On other operating systems, the MSAA value needs to be passed to *_create_context, so we
     // need to have an extra step here if you want MSAA.
     msaa := Simp.prepare_window(my_window, wanted_msaa = WANTED_MSAA);
+    log("Wanted MSAA: %\nChosen MSAA: %", WANTED_MSAA, msaa);
 
     // Actual render size in pixels can be different from the window dimensions we specified above (for example on high-resolution displays on macOS/iOS).
     window_width, window_height = Simp.get_render_dimensions(my_window);

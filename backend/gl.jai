@@ -20,7 +20,7 @@ backend_init :: (info: *Window_Info) {
         do_first_time_init = true;
 
         #if OS == .WINDOWS {
-            hglrc, hdc, chosen_msaa := wgl_create_context(info.window, null, MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION);
+            hglrc, hdc, chosen_msaa := wgl_create_context(info.window, null, MINIMUM_GL_MAJOR_VERSION, MINIMUM_GL_MINOR_VERSION, wanted_msaa=info.wanted_msaa);
             the_gl_context = hglrc;
             the_hdc_for_pixel_format_cloning = hdc;
             info.msaa = chosen_msaa;
@@ -225,7 +225,6 @@ uniform vec4 text_color;
 void main () {
     vec4 texture_sample = texture(text_sampler, TextureCoords);
     color = vec4(iterated_color.xyz, texture_sample.a * iterated_color.a); // text_color * texture_sample;
-    if (texture_sample.a < .3)  discard;
 }
 #endif // FRAGMENT_SHADER
 END
@@ -325,6 +324,8 @@ void main () {
 END
 
 
+#scope_export
+
 get_shader_program :: (shader_text: string) -> GLuint {
     LOG_BUFFER_SIZE :: 512;
 
@@ -410,8 +411,6 @@ get_shader_program :: (shader_text: string) -> GLuint {
     return shader_p;
 }
 
-
-#scope_export
 draw_generated_quads :: (font: *Dynamic_Font, color := Vector4.{1, 1, 1, 1}) {
     CheckInit();
     quads := font.current_quads;
@@ -447,11 +446,6 @@ draw_generated_quads :: (font: *Dynamic_Font, color := Vector4.{1, 1, 1, 1}) {
         immediate_quad(p0, p1, p2, p3, color, uv0, uv1, uv2, uv3);
     }
 
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
     last_texture: s64 = -1;
 
     for quad, i: quads {
@@ -473,6 +467,11 @@ draw_generated_quads :: (font: *Dynamic_Font, color := Vector4.{1, 1, 1, 1}) {
             if loc < 0  log_error("Unable to find text_sampler in shader_text!");
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, handle);  // Bind handle to slot 0.
+
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
             glUniform1i(loc, 0);
         }
 
@@ -489,26 +488,6 @@ draw_generated_quads :: (font: *Dynamic_Font, color := Vector4.{1, 1, 1, 1}) {
 Texture_Platform_Specific :: struct {
     gl_handle: GLuint;
 }
-
-deinit :: (texture: *Texture) {
-    handle := texture.gl_handle;
-    if !handle  return;
-
-    /* @Incomplete: Decide what to do here that is simple.
-
-    gl_target := texture.gl_target;
-    if gl_target == GL_RENDERBUFFER {
-        glDeleteRenderbuffers(1, *handle);
-    } else {
-        assert(gl_target == GL_TEXTURE_2D || gl_target == GL_TEXTURE_3D || gl_target == GL_TEXTURE_CUBE_MAP || gl_target == GL_TEXTURE_2D_ARRAY || gl_target == GL_TEXTURE_CUBE_MAP_ARRAY || gl_target == GL_TEXTURE_BUFFER);
-        glDeleteTextures(1, *handle);
-    }
-*/
-
-    texture.gl_handle = 0;
-//    texture.resource_size = 0;
-}
-
 
 //
 // @CompilerFeature
@@ -787,6 +766,7 @@ backend_create_render_target :: (texture: *Texture) {
     glGetIntegerv(GL_TEXTURE_BINDING_2D, xx *old_map);
     defer glBindTexture(GL_TEXTURE_2D, old_map);
 
+    // Create the actual render target.
     glGenTextures(1, *texture.gl_handle);
     glBindTexture(GL_TEXTURE_2D, texture.gl_handle);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, xx texture.width, xx texture.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, null);
@@ -865,6 +845,14 @@ backend_tweak_projection_matrix :: (m: *Matrix4) {
         m._23 *= -1;
         m._24 *= -1;
     }
+}
+
+backend_texture_destroy :: (texture: *Texture) {
+    handle := texture.gl_handle;
+    if !handle  return;
+    
+    glDeleteTextures(1, *handle);
+    texture.gl_handle = 0;
 }
 
 #if OS == .WINDOWS {
